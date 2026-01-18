@@ -21,13 +21,19 @@ with entry1:
 with entry2:
     end_date = st.date_input("Data final", pd.to_datetime("today"), format="DD/MM/YYYY")
 df = yf.download(ticker_symbol, start=start_date, end=end_date, interval="1d")
-df.dropna(inplace=True)
+# df['Date'] = pd.to_datetime(df.index)
+# df.dropna(inplace=True)
+df.sort_values(by='Date', inplace=True, ascending=False)
 
 aba1, aba2 = st.tabs(["📈 Gráfico", "📊 Dados brutos"])
 
 with aba1:
     st.write(f"Gráfico de preços de fechamento do índice {ticker_symbol} de {start_date} até {end_date}")
     st.line_chart(df['Close'])
+    # cut_off_date = end_date - pd.Timedelta(days=30)
+    # filtered_df = df[df['Date'] > cut_off_date]
+    # st.write(f"Gráfico de preços de fechamento do índice {ticker_symbol} dos últimos 30 dias")
+    # st.line_chart(filtered_df['Close'])
     
 with aba2:
     st.write("Dados brutos")
