@@ -5,20 +5,28 @@
 import yfinance as yf
 import pandas as pd
 import streamlit as st
+from datetime import datetime, timedelta
 
 # --------------------------------------------------------------
 # Download and display stock market data
 # --------------------------------------------------------------
 
-df = yf.download("^BVSP", period="2y", interval="1d")
-df.dropna(inplace=True)
+
 
 st.title("📈 Análise de índices da Bolsa")
+ticker_symbol = st.text_input("Digite o índice (ex: ^BVSP)", "^BVSP")
+entry1, entry2 = st.columns(2)
+with entry1:
+    start_date = st.date_input("Data inicial (sugerido 2 anos atrás)", datetime.now() - timedelta(days=365*2), format="DD/MM/YYYY")
+with entry2:
+    end_date = st.date_input("Data final", pd.to_datetime("today"), format="DD/MM/YYYY")
+df = yf.download(ticker_symbol, start=start_date, end=end_date, interval="1d")
+df.dropna(inplace=True)
 
 aba1, aba2 = st.tabs(["📈 Gráfico", "📊 Dados brutos"])
 
 with aba1:
-    st.write("Gráfico de preços de fechamento do índice Bovespa nos últimos 2 anos")
+    st.write(f"Gráfico de preços de fechamento do índice {ticker_symbol} de {start_date} até {end_date}")
     st.line_chart(df['Close'])
     
 with aba2:
