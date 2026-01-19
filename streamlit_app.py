@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 
 
 st.title("📈 Análise de índices da Bolsa")
+st.write("Participantes: Andrea Grassmann, Victor Almeida e Eliéser Reis")
 ticker_symbol = st.text_input("Digite o índice (ex: ^BVSP)", "^BVSP")
 entry1, entry2 = st.columns(2)
 with entry1:

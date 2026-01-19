@@ -56,3 +56,10 @@ pip install streamlit
 ```bash
 streamlit run streamlit_app.py
 ```
+
+#### Deploy da aplicação
+- Este repositório está sendo executado na nuvem da Streamlit em uma conta pessoal grátis conectada a este repositório, no endereço abaixo:
+  
+  [https://grupo4fase.streamlit.app/](https://grupo4fase.streamlit.app/)
+
+- Alterações que forem comitadas neste repositório são automáticamente executadas na nuvem, por isso execute localmente para testar antes de efetuar o _commit_ das alterações.
