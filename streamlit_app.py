@@ -12,6 +12,7 @@ warnings.filterwarnings('ignore')
 
 st.set_page_config(page_title="Previsão Ibovespa - Otimizada", layout="wide")
 st.title("📈 Previsão de Tendência - Ibovespa")
+st.write("PósTech FIAP Fase 4. Participantes: Andrea Grassmann, Victor Almeida e Elieser Reis")
 
 # Sidebar - CONFIGURAÇÕES DE DATA
 st.sidebar.header("📅 Período dos Dados")
