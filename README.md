@@ -30,7 +30,7 @@ pip install streamlit
 ```
 - Finalmente, execute o dashboard digitando o seguinte:
 ```bash
-streamlit run streamlit_app.py
+streamlit run
 ```
 
 #### Executar no Linux ou WSL2
@@ -54,7 +54,7 @@ pip install streamlit
 ```
 - Finalmente, execute o dashboard digitando o seguinte:
 ```bash
-streamlit run streamlit_app.py
+streamlit run
 ```
 
 #### Deploy da aplicação
