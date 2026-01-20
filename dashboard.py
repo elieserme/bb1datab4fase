@@ -64,7 +64,7 @@ def create_advanced_features(df):
     for period in [5, 10, 20]:
         df_features[f'Momentum_{period}'] = close - close.shift(period)
     
-    # MACD (diferentes configurações)
+    # MACD
     exp1_12 = close.ewm(span=12, adjust=False).mean()
     exp2_26 = close.ewm(span=26, adjust=False).mean()
     df_features['MACD'] = exp1_12 - exp2_26
@@ -108,56 +108,54 @@ def create_advanced_features(df):
     df_features['OC_Range'] = close - open_price
     df_features['OC_Pct'] = (close - open_price) / open_price
     
-    # Tendência de alta/baixa
+    # Tendência
     df_features['Higher_High'] = (high > high.shift(1)).astype(int)
     df_features['Lower_Low'] = (low < low.shift(1)).astype(int)
     
     # Williams %R
     df_features['Williams_R'] = -100 * ((high_14 - close) / (high_14 - low_14))
     
-    # Rate of Change (ROC)
+    # ROC
     for period in [5, 10, 20]:
         df_features[f'ROC_{period}'] = ((close - close.shift(period)) / close.shift(period)) * 100
     
-    # Remover NaN
     df_features.dropna(inplace=True)
-    
     return df_features
 
-# Função para treinar com otimização de hiperparâmetros e ensemble
+# Treinar modelo - VERSÃO MELHORADA
 def predict_with_optimized_model(df, window_size=30, forecast_days=5, optimize=True):
-    # Criar features avançadas
     df_features = create_advanced_features(df)
     
-    # Preparar dados (usar mais dados para treino)
-    train_data = df_features.tail(200)
+    # MUDANÇA: usar TODO o dataframe disponível ao invés de apenas 200 dias
+    train_data = df_features  # Usar tudo
     
     feature_cols = [col for col in train_data.columns if col not in ['Close', 'Open', 'High', 'Low', 'Volume', 'Adj Close']]
     
     X = train_data[feature_cols]
     y = train_data['Close'].squeeze()
     
-    # Dividir em treino e teste
-    split_idx = int(len(X) * 0.8)
+    # Split temporal 85/15
+    split_idx = int(len(X) * 0.85)
     X_train, X_test = X[:split_idx], X[split_idx:]
     y_train, y_test = y[:split_idx], y[split_idx:]
     
+    st.info(f"📊 Usando {len(X)} amostras | Treino: {len(X_train)} | Teste: {len(X_test)}")
+    
     if optimize:
-        # Otimização de hiperparâmetros com RandomizedSearchCV
         param_dist = {
-            'n_estimators': [100, 200, 300, 400],
-            'max_depth': [10, 15, 20, 25, None],
+            'n_estimators': [200, 300, 400, 500],
+            'max_depth': [8, 10, 12, 15, None],
             'min_samples_split': [2, 5, 10],
             'min_samples_leaf': [1, 2, 4],
-            'max_features': ['sqrt', 'log2', None],
-            'bootstrap': [True, False]
+            'max_features': ['sqrt', 'log2'],
+            'bootstrap': [True]
         }
         
         rf = RandomForestRegressor(random_state=42, n_jobs=-1)
         random_search = RandomizedSearchCV(
             rf, 
             param_distributions=param_dist, 
-            n_iter=20,
+            n_iter=15,
             cv=3, 
             random_state=42,
             n_jobs=-1,
@@ -169,24 +167,26 @@ def predict_with_optimized_model(df, window_size=30, forecast_days=5, optimize=T
         best_params = random_search.best_params_
     else:
         best_rf = RandomForestRegressor(
-            n_estimators=200,
-            max_depth=20,
+            n_estimators=300,
+            max_depth=12,
             min_samples_split=5,
+            min_samples_leaf=2,
             random_state=42,
             n_jobs=-1
         )
         best_rf.fit(X_train, y_train)
         best_params = {}
     
-    # Criar ensemble com múltiplos modelos
+    # Gradient Boosting
     gb = GradientBoostingRegressor(
-        n_estimators=200,
-        max_depth=10,
-        learning_rate=0.1,
+        n_estimators=300,
+        max_depth=8,
+        learning_rate=0.05,
+        subsample=0.8,
         random_state=42
     )
     
-    # Ensemble voting
+    # Ensemble
     ensemble = VotingRegressor(
         estimators=[
             ('rf', best_rf),
@@ -197,105 +197,105 @@ def predict_with_optimized_model(df, window_size=30, forecast_days=5, optimize=T
     
     ensemble.fit(X_train, y_train)
     
-    # Avaliar modelos
+    # Avaliar
     y_pred_test = ensemble.predict(X_test)
     r2 = r2_score(y_test, y_pred_test)
     mae = mean_absolute_error(y_test, y_pred_test)
     rmse = np.sqrt(mean_squared_error(y_test, y_pred_test))
+    mape = np.mean(np.abs((y_test - y_pred_test) / y_test)) * 100
     
-    # Fazer previsões futuras
+    # Previsões futuras - CORRIGIDO
     predictions = []
-    current_data = df_features.copy()
+    
+    # Usar os dados COMPLETOS para ter contexto suficiente
+    current_full_df = df.copy()
     
     for i in range(forecast_days):
-        last_features = current_data[feature_cols].iloc[-1:].values
-        next_pred = ensemble.predict(last_features)[0]
+        # Recriar features do dataframe atual
+        current_features_df = create_advanced_features(current_full_df)
+        
+        # Pegar última linha com todas as features
+        last_row = current_features_df[feature_cols].iloc[-1:].copy()
+        
+        # Prever
+        next_pred = ensemble.predict(last_row)[0]
         predictions.append(next_pred)
         
-        # Criar nova linha
-        new_row = current_data.iloc[-1].copy()
-        new_row['Close'] = next_pred
-        new_row['High'] = next_pred * 1.005
-        new_row['Low'] = next_pred * 0.995
-        new_row['Open'] = next_pred * 0.998
-        new_row['Volume'] = current_data['Volume'].iloc[-5:].mean()
+        # Adicionar aos dados originais (OHLCV)
+        last_date = current_full_df.index[-1]
+        next_date = last_date + pd.Timedelta(days=1)
         
-        new_row_df = pd.DataFrame([new_row])
-        current_data = pd.concat([current_data, new_row_df], ignore_index=False)
-        current_data = create_advanced_features(current_data)
+        new_row = pd.DataFrame({
+            'Open': [next_pred * 0.999],
+            'High': [next_pred * 1.003],
+            'Low': [next_pred * 0.997],
+            'Close': [next_pred],
+            'Volume': [current_full_df['Volume'].iloc[-5:].mean()]
+        }, index=[next_date])
+        
+        current_full_df = pd.concat([current_full_df, new_row])
     
-    return predictions, r2, mae, rmse, ensemble, feature_cols, best_params
+    return predictions, r2, mae, rmse, mape, ensemble, feature_cols, best_params
 
 # Sidebar
 st.sidebar.header("⚙️ Configurações")
-window_size = st.sidebar.slider("Janela de análise (dias)", 20, 60, 30)
+window_size = st.sidebar.slider("Janela de análise (dias)", 20, 90, 60)
 forecast_days = st.sidebar.slider("Dias a prever", 3, 10, 5)
-optimize = st.sidebar.checkbox("Otimizar hiperparâmetros", value=True, help="Melhora R² mas leva mais tempo")
+optimize = st.sidebar.checkbox("Otimizar hiperparâmetros", value=False, help="Melhora R² mas leva mais tempo (3-5 min)")
 
-# Treinar e prever
+# Treinar
 if optimize:
-    with st.spinner('🔧 Otimizando hiperparâmetros e treinando ensemble...'):
-        predictions, r2, mae, rmse, model, feature_cols, best_params = predict_with_optimized_model(
+    with st.spinner('🔧 Otimizando hiperparâmetros (pode levar alguns minutos)...'):
+        predictions, r2, mae, rmse, mape, model, feature_cols, best_params = predict_with_optimized_model(
             df, window_size, forecast_days, optimize
         )
 else:
-    with st.spinner('⚡ Treinando modelo rápido...'):
-        predictions, r2, mae, rmse, model, feature_cols, best_params = predict_with_optimized_model(
+    with st.spinner('⚡ Treinando modelo...'):
+        predictions, r2, mae, rmse, mape, model, feature_cols, best_params = predict_with_optimized_model(
             df, window_size, forecast_days, optimize
         )
 
-# Métricas do modelo
+# Métricas
 st.subheader("📊 Métricas de Desempenho do Modelo")
 
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 
 with col1:
-    st.metric(
-        label="R² Score",
-        value=f"{r2:.4f}",
-        help="Quanto mais próximo de 1, melhor"
-    )
+    st.metric("R² Score", f"{r2:.4f}")
 
 with col2:
-    st.metric(
-        label="MAE",
-        value=f"R$ {mae:,.2f}"
-    )
+    st.metric("MAE", f"R$ {mae:,.2f}")
 
 with col3:
-    st.metric(
-        label="RMSE",
-        value=f"R$ {rmse:,.2f}"
-    )
+    st.metric("RMSE", f"R$ {rmse:,.2f}")
 
-# Interpretar R²
-if r2 >= 0.9:
-    st.success(f"🎯 Excelente ajuste do modelo (R² = {r2:.4f})")
-elif r2 >= 0.7:
-    st.info(f"✅ Bom ajuste do modelo (R² = {r2:.4f})")
-elif r2 >= 0.5:
-    st.warning(f"⚠️ Ajuste moderado do modelo (R² = {r2:.4f})")
+with col4:
+    st.metric("MAPE", f"{mape:.2f}%")
+
+# Interpretar
+if r2 >= 0.90:
+    st.success(f"🎯 Excelente! R² = {r2:.4f}")
+elif r2 >= 0.75:
+    st.info(f"✅ Bom ajuste: R² = {r2:.4f}")
+elif r2 >= 0.50:
+    st.warning(f"⚠️ Ajuste moderado: R² = {r2:.4f}")
+elif r2 >= 0:
+    st.warning(f"⚠️ Ajuste fraco: R² = {r2:.4f} - Tente otimizar")
 else:
-    st.error(f"❌ Ajuste fraco - considere otimizar (R² = {r2:.4f})")
+    st.error(f"❌ R² negativo ({r2:.4f}) - Modelo pior que média simples")
 
-# Mostrar melhores parâmetros se otimizado
 if optimize and best_params:
-    with st.expander("🔍 Melhores Hiperparâmetros Encontrados"):
+    with st.expander("🔍 Melhores Hiperparâmetros"):
         st.json(best_params)
 
-# Preparar visualização
+# Gráfico
 last_days = df.tail(window_size)
 ultimo_valor = df['Close'].iloc[-1]
 ultima_data = df.index[-1]
 
 future_dates = pd.bdate_range(start=ultima_data + timedelta(days=1), periods=forecast_days)
+forecast_df = pd.DataFrame({'Data': future_dates, 'Previsão': predictions})
 
-forecast_df = pd.DataFrame({
-    'Data': future_dates,
-    'Previsão': predictions
-})
-
-# Gráfico
 fig = go.Figure()
 
 fig.add_trace(go.Scatter(
@@ -311,7 +311,7 @@ fig.add_trace(go.Scatter(
     x=forecast_df['Data'],
     y=forecast_df['Previsão'],
     mode='lines+markers',
-    name=f'Previsão Ensemble (R²={r2:.3f})',
+    name=f'Previsão (R²={r2:.3f}, MAPE={mape:.2f}%)',
     line=dict(color='#2ca02c', width=3, dash='dash'),
     marker=dict(size=10, symbol='diamond')
 ))
@@ -325,7 +325,7 @@ fig.add_trace(go.Scatter(
 ))
 
 fig.update_layout(
-    title=f"Previsão Ibovespa - Modelo Ensemble Otimizado",
+    title=f"Previsão Ibovespa - Ensemble Otimizado (RF + GB)",
     xaxis_title="Data",
     yaxis_title="Valor de Fechamento (R$)",
     hovermode='x unified',
@@ -336,24 +336,18 @@ fig.update_layout(
 
 st.plotly_chart(fig, use_container_width=True)
 
-# Previsões detalhadas
+# Tabela
 st.subheader("📈 Previsões Detalhadas")
 
 col1, col2 = st.columns(2)
 
 with col1:
-    st.metric(
-        label="Último Fechamento Real",
-        value=f"R$ {ultimo_valor:,.2f}"
-    )
+    st.metric("Último Fechamento Real", f"R$ {ultimo_valor:,.2f}")
 
 with col2:
     variacao = ((predictions[-1] - ultimo_valor) / ultimo_valor) * 100
-    st.metric(
-        label=f"Previsão para {forecast_df['Data'].iloc[-1].strftime('%d/%m/%Y')}",
-        value=f"R$ {predictions[-1]:,.2f}",
-        delta=f"{variacao:+.2f}%"
-    )
+    st.metric(f"Previsão {forecast_df['Data'].iloc[-1].strftime('%d/%m/%Y')}", 
+              f"R$ {predictions[-1]:,.2f}", f"{variacao:+.2f}%")
 
 st.dataframe(
     pd.DataFrame({
@@ -369,5 +363,5 @@ st.dataframe(
     hide_index=True
 )
 
-st.info("💡 **Modelo Ensemble**: Combina Random Forest otimizado + Gradient Boosting para maior precisão")
-st.warning("⚠️ Previsões são estimativas estatísticas. Não devem ser usadas como única base para investimentos.")
+st.info(f"💡 **Modelo**: Random Forest + Gradient Boosting | {len(feature_cols)} features")
+st.warning("⚠️ Previsões são estimativas estatísticas. Use múltiplas fontes para decisões de investimento.")
